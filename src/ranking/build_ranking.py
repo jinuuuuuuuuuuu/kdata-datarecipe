@@ -8,7 +8,7 @@
 4) 가중합: 논문(이기수·정준호 2026) AHP 종합중요도를 5개 피처로 재정규화. 결측 피처는 가중치를 남은 피처로 재정규화(방법 A)
 5) 등급: 판정보류(전력 등 피처 결측, 점수는 참고로만 산출) / 용수 선결(H < D=4,080) / 나머지에서 A 상위 20%, B 20~50%, C 하위 50%
 6) 보강 항목: 전력 여유 0MW, 용수(H<D), 그 밖에 평가 대상 하위 25% 피처
-7) 민감도: Fuzzy-AHP 가중치, 동일 가중치, 신재생 대체배분, D 400/33,840, 수도권 제외
+7) 민감도: Fuzzy-AHP 가중치, 동일 가중치, 신재생 대체배분, D 400/33,840
 """
 import sys
 from pathlib import Path
@@ -154,13 +154,11 @@ for k, v in sens.items():
     df[f"민감도_등급_{k}"] = grade(v, df.수자원_H)
 for d in (400.0, 33840.0):
     df[f"민감도_등급_D{int(d)}"] = grade(df.수용점수, df.수자원_H, d)
-nc = P & ~HOLD & ~df.수도권
-df["비수도권순위"] = df.수용점수.where(nc).rank(ascending=False, method="min")
 
 w = pd.Series(AHP) / sum(AHP.values())
 cols = [KEY, "시도명", "시군구명", "등급", "전체순위", "등급내순위", "수용점수", "부분점수", "보강항목", "강점", "해석주의",
         *[f"점수_{f}" for f in FEATS], "용량MW_2029", "수자원_H", "신재생_발전량_MWh", "재해_안전도", "냉각_WSE가능비율",
-        "전력_0.5GW수용", "후보제외", "제외사유", "수도권", "비수도권순위",
+        "전력_0.5GW수용", "후보제외", "제외사유", "수도권",
         *[c for c in df.columns if c.startswith("민감도_")]]
 res = df[cols].sort_values(["후보제외", "전체순위"], na_position="last").reset_index(drop=True)
 res.to_csv(OUT / "최종_순위.csv", index=False, encoding="utf-8-sig")
@@ -185,8 +183,6 @@ for d in (400, 33840):
 show = ["전체순위", "시도명", "시군구명", "등급", "수용점수", *[f"점수_{f}" for f in FEATS], "보강항목", "해석주의"]
 print("\n[상위 25]")
 print(res[~res.후보제외].head(25)[show].round(3).to_string(index=False))
-print("\n[비수도권 상위 15]")
-print(res[~res.후보제외 & ~res.수도권].sort_values("비수도권순위").head(15)[show].round(3).to_string(index=False))
 print("\n[확정 부지 검증: 세종·동해·울산]")
 v = res[res[KEY].isin(["36110", "51170", "31110", "31140", "31170", "31200", "31710"])]
-print(v[show + ["비수도권순위"]].round(3).to_string(index=False))
+print(v[show].round(3).to_string(index=False))
