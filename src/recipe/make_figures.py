@@ -80,8 +80,9 @@ def draw_grades(ax, lw):
         gdf[gdf.suitability_grade == g].plot(ax=ax, facecolor=c, edgecolor=SURFACE, linewidth=lw)
     gdf[gdf.suitability_grade == "용수선결"].plot(ax=ax, facecolor=WATER_COLOR, edgecolor=SURFACE, linewidth=lw)
     gdf[gdf.suitability_grade == "제외"].plot(ax=ax, facecolor=NEUTRAL_EXCL, edgecolor=SURFACE, linewidth=lw)
-    h = gdf[gdf.suitability_grade == "판정보류"]
-    h.plot(ax=ax, facecolor=NEUTRAL_EXCL, edgecolor=NEUTRAL_HOLD, linewidth=0.3, hatch="//////")
+    h = gdf[gdf.suitability_grade == "판정보류"]  # 피처 결측으로 등급을 보류한 지역(현재 데이터에는 없음)
+    if len(h):
+        h.plot(ax=ax, facecolor=NEUTRAL_EXCL, edgecolor=NEUTRAL_HOLD, linewidth=0.3, hatch="//////")
 
 
 fig = plt.figure(figsize=(9, 10.2))
@@ -99,14 +100,16 @@ for s in ins.spines.values():
 ins.add_patch(Rectangle((bx[0], by[0]), bx[1] - bx[0], by[1] - by[0], fill=False, edgecolor=INK2, linewidth=0.8))
 ins.text(bx[0] + 0.01, by[1] - 0.02, "수도권 확대", fontsize=9, color=INK2, va="top")
 n = d.suitability_grade.value_counts()
-title(fig, "수용 등급 지도: 256개 시군구를 A·B·C·용수선결·판정보류·제외로 구분",
-      f"A {n['A']}곳 · B {n['B']}곳 · C {n['C']}곳 · 용수선결 {n['용수선결']}곳 · 판정보류 {n['판정보류']}곳 · 제외 {n['제외']}곳")
+N_EVAL = int(d.suitability_score.notna().sum())  # 평가 대상(후보제외를 뺀 지역)
+N_EXCL = int(d.suitability_score.isna().sum())
+N_ZERO = int(((d.power_substation_headroom_mw_2029 == 0) & d.suitability_score.notna()).sum())  # 전력 여유 0MW
+title(fig, "수용 등급 지도: 256개 시군구를 A·B·C·용수선결·제외로 구분",
+      f"A {n['A']}곳 · B {n['B']}곳 · C {n['C']}곳 · 용수선결 {n['용수선결']}곳 · 제외 {n['제외']}곳")
 handles = [Patch(facecolor=GRADE_COLOR["A"], label="A (용수 통과 지역의 상위 20%)"),
            Patch(facecolor=GRADE_COLOR["B"], label="B (20–50%)"),
            Patch(facecolor=GRADE_COLOR["C"], label="C (하위 50%)"),
            Patch(facecolor=WATER_COLOR, label="용수선결 (공급 여유 4,080 m³/일 미만)"),
-           Patch(facecolor=NEUTRAL_EXCL, edgecolor=NEUTRAL_HOLD, hatch="//////", label="판정보류 (전력 결측)"),
-           Patch(facecolor=NEUTRAL_EXCL, label="제외 (연안 고위험·전력 분석 제외)")]
+           Patch(facecolor=NEUTRAL_EXCL, label="제외 (연안 고위험)")]
 fig.legend(handles=handles, loc="lower left", bbox_to_anchor=(0.04, 0.04), frameon=False, fontsize=9, labelcolor=INK2,
            ncol=2, columnspacing=1.6, handlelength=1.4)
 credit(fig)
@@ -129,7 +132,7 @@ style_map(ins, bx, by)
 ins.add_patch(Rectangle((bx[0], by[0]), bx[1] - bx[0], by[1] - by[0], fill=False, edgecolor=INK2, linewidth=0.8))
 ins.text(bx[0] + 0.01, by[1] - 0.02, "수도권 확대", fontsize=9, color=INK2, va="top")
 title(fig, "수용 점수 지도: 점수가 높을수록 1GW급 수용 여건이 좋음",
-      f"전력·신재생·수자원·재해·냉각 5개 점수의 가중합(0–1), 실제 범위 {vmin:.2f}–{vmax:.2f}. 회색은 후보제외 11곳")
+      f"전력·신재생·수자원·재해·냉각 5개 점수의 가중합(0–1), 실제 범위 {vmin:.2f}–{vmax:.2f}. 회색은 후보제외 {N_EXCL}곳")
 cax = fig.add_axes([0.06, 0.055, 0.34, 0.014])
 cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=CMAP), cax=cax, orientation="horizontal")
 cb.outline.set_visible(False)
@@ -156,10 +159,10 @@ cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm01, cmap=CMAP), cax=cax, orient
 cb.outline.set_visible(False)
 cb.ax.tick_params(labelsize=9, length=0, colors=INK2)
 fig.text(0.70, 0.335, "피처 점수(0–1, 클수록 유리)", fontsize=10, color=INK2)
-fig.text(0.70, 0.245, "회색: 후보제외 또는 결측\n(전력은 평가 대상의 약 1/3(86곳)이\n변전소 여유 0MW라 점수 0)",
+fig.text(0.70, 0.245, f"회색: 후보제외\n(전력은 평가 대상의 약 {N_ZERO / N_EVAL:.0%}({N_ZERO}곳)가\n변전소 여유 0MW라 점수 0)",
          fontsize=9, color=INK2, va="top")
 title(fig, "피처별 점수 지도: 같은 지역도 전력·신재생·수자원·재해·냉각 여건이 서로 다름",
-      "평가 대상 245곳 안에서 피처마다 0–1로 정규화한 점수. 가중치는 논문 AHP 종합중요도를 5개 피처로 재정규화")
+      f"평가 대상 {N_EVAL}곳 안에서 피처마다 0–1로 정규화한 점수. 가중치는 논문 AHP 종합중요도를 5개 피처로 재정규화")
 credit(fig)
 fig.savefig(OUT / "fig3_feature_maps.png", dpi=200)
 plt.close(fig)
@@ -195,7 +198,7 @@ ax.set_xlabel("수용 점수(피처 점수 × 가중치의 합)", fontsize=9.5)
 fig.legend(loc="upper left", bbox_to_anchor=(0.27, 0.885), ncol=5, frameon=False, fontsize=9, labelcolor=INK2,
            handlelength=1.2, columnspacing=1.2)
 title(fig, "상위 20곳의 점수 구성: 전력 기여가 가장 크고, 나머지는 지역마다 조합이 다름",
-      "막대 길이 = 수용 점수, 색 구간 = 피처별 기여(점수 × 가중치). 판정보류 3곳은 순위에서 제외")
+      "막대 길이 = 수용 점수, 색 구간 = 피처별 기여(점수 × 가중치)")
 credit(fig, "[용수선결]은 점수는 높지만 용수 기준 미달.")
 fig.savefig(OUT / "fig4_top20_contribution.png", dpi=200)
 plt.close(fig)
