@@ -1,0 +1,10 @@
+# 비밀값(기상청 API 키)
+.env
+**/.env
+
+# 수집 로그·진행 파일
+data/raw/cooling/_log/
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
