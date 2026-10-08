@@ -2,11 +2,11 @@
 
 입력: data/processed/ (최종_순위.csv, 수자원_냉각_통합.csv, 재해_피처.csv)
 출력: recipe/
-  aidc_siting_dataset.csv            256행 x 17열 (타겟 변수: suitability_score)
+  aidc_siting_dataset.csv            256행 x 21열 (타겟 변수: suitability_score)
   aidc_siting_column_definition.csv  변수 번호 / 타겟 변수 여부 / 데이터 타입 / 데이터 컬럼 명 / 비고
   aidc_siting_template_example.csv   같은 컬럼, 등급별 대표 5행
 
-컬럼 구성 원칙: 식별 3열 -> 피처별(원값, 점수) 5쌍 -> 타겟 -> 결과·보강 항목.
+컬럼 구성 원칙: 식별 3열 -> 피처별(원값, 점수) 5쌍(재해는 4개 세부 재해 점수 포함) -> 타겟 -> 결과·보강 항목.
 순위·강점·품질 표시 등 계산 과정의 부산물은 제출용에서 빼고 data/processed/최종_순위.csv에만 둔다.
 """
 from pathlib import Path
@@ -27,7 +27,7 @@ def read(name):
 
 
 rk = read("최종_순위.csv")
-dz = read("재해_피처.csv")[[KEY]]
+dz = read("재해_피처.csv")[[KEY, "지진_위험점수_1978_2025", "재해_홍수점수_사용", "산사태_위험점수_2016_2025", "산불_위험점수_2011_2025", "연안_Flag"]]
 df = rk.merge(dz, on=KEY, validate="1:1")
 assert len(df) == 256 and df[KEY].is_unique
 
@@ -42,7 +42,11 @@ SPEC = [
     ("renewable_score", df.점수_신재생, "Float64", "X", "신재생 점수 0~1. log(1+발전량)을 min-max 정규화. 클수록 유리. 후보제외는 빈칸"),
     ("water_supply_headroom_m3_per_day", df.수자원_H, "Float64", "X", "수자원 원값. 최대급수일 기준 공급 여유(m³/일) = 자체 정수장 여유 + 연결된 광역 정수장 여유 + 이웃에서 받는 정수. 클수록 유리. 1GW 데이터센터의 하루 물 수요 기준값 4,080 m³/일(1GW × 24h × 공랭 WUE 0.17 L/kWh) 미만이면 용수선결 등급. 0은 여유 없음(실제 0)"),
     ("water_score", df.점수_수자원, "Float64", "X", "수자원 점수 0~1. log(1+공급 여유)를 min-max 정규화. 클수록 유리. 후보제외는 빈칸"),
-    ("disaster_safety_index", df.재해_안전도, "Float64", "X", "재해 원값. 재해 안전도 0~1 = 1 − 위험지수, 위험지수 = (0.19×지진 + 0.17×홍수 + 0.13×산사태 + 0.08×산불)/0.57(연안 CO Yellow는 ×1.2). 클수록 안전해 유리. 연안 CO Red 10곳은 후보제외라 빈칸"),
+    ("disaster_earthquake_score", df.지진_위험점수_1978_2025.where(df.재해_안전도.notna()), "Float64", "X", "재해 세부 점수 1. 지진 위험 점수 0~1(클수록 위험, 재해 담당 산출, 1978~2025 지진 기록 기반). 안전도 계산 가중치 0.19. 연안 고위험(CO Red) 10곳은 빈칸"),
+    ("disaster_flood_score", df.재해_홍수점수_사용.where(df.재해_안전도.notna()), "Float64", "X", "재해 세부 점수 2. 홍수 위험 점수 0~1(클수록 위험, 100년 빈도 하천 침수 예상 면적 기반). 안전도 계산 가중치 0.17. 연안 고위험(CO Red) 10곳은 빈칸"),
+    ("disaster_landslide_score", df.산사태_위험점수_2016_2025.where(df.재해_안전도.notna()), "Float64", "X", "재해 세부 점수 3. 산사태 위험 점수 0~1(클수록 위험, 2016~2025 산사태 발생·피해 기반). 안전도 계산 가중치 0.13. 연안 고위험(CO Red) 10곳은 빈칸"),
+    ("disaster_wildfire_score", df.산불_위험점수_2011_2025.where(df.재해_안전도.notna()), "Float64", "X", "재해 세부 점수 4. 산불 위험 점수 0~1(클수록 위험, 2011~2025 산불 발생·피해 기반). 안전도 계산 가중치 0.08. 연안 고위험(CO Red) 10곳은 빈칸"),
+    ("disaster_safety_index", df.재해_안전도, "Float64", "X", "재해 안전도 0~1 = 1 − 위험지수. 위험지수 = (0.19×지진 + 0.17×홍수 + 0.13×산사태 + 0.08×산불)/0.57(위 4개 세부 점수를 가중합, 연안 CO Yellow는 ×1.2). 클수록 안전해 유리. 연안 CO Red 10곳은 후보제외라 빈칸"),
     ("disaster_score", df.점수_재해, "Float64", "X", "재해 점수 0~1. disaster_safety_index를 min-max 정규화. 클수록 유리. 후보제외는 빈칸"),
     ("cooling_free_cooling_hour_ratio", df["냉각_WSE가능비율"], "Float64", "X", "냉각 원값. 습구온도 12.8℃ 이하인 시간의 비율(외기만으로 냉각 가능한 시간), 2024~2025 평균. 클수록 유리. 기상청 ASOS·AWS 시간자료, 습구온도는 Stull(2011) 식"),
     ("cooling_score", df.점수_냉각, "Float64", "X", "냉각 점수 0~1. cooling_free_cooling_hour_ratio를 min-max 정규화. 클수록 유리. 후보제외는 빈칸"),
@@ -76,6 +80,14 @@ assert (g == "제외").sum() == 11 and g.isin(["A", "B", "C"]).sum() == 201
 assert (data.loc[g == "용수선결", "water_supply_headroom_m3_per_day"] < D_WATER).all()
 assert (data.loc[g.isin(["A", "B", "C"]), "water_supply_headroom_m3_per_day"] >= D_WATER).all()
 assert data.excluded_reason.notna().equals(g == "제외")
+
+# 재해 세부 점수 4개가 안전도를 그대로 재현하는지 확인(안전도 = 1 - 가중합, 연안 CO Yellow는 x1.2)
+m = data.disaster_safety_index.notna()
+yellow = df.연안_Flag.eq("CO Yellow").map({True: 1.2, False: 1.0})
+risk = (0.19 * data.disaster_earthquake_score + 0.17 * data.disaster_flood_score
+        + 0.13 * data.disaster_landslide_score + 0.08 * data.disaster_wildfire_score) / 0.57 * yellow
+assert (1 - risk[m] - data.disaster_safety_index[m]).abs().max() < 2e-4, "세부 점수로 안전도가 재현되지 않음"
+assert data.loc[m, [c for c in data.columns if c.startswith("disaster_") and c.endswith("_score") and c != "disaster_score"]].notna().all().all()
 
 data.to_csv(OUT / "aidc_siting_dataset.csv", index=False, encoding="utf-8-sig")
 
