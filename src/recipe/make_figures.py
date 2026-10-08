@@ -42,9 +42,13 @@ ASPECT = 1 / np.cos(np.deg2rad(36))
 CREDIT = "경계: 통계청 SGIS 행정동 경계(admdongkor ver20260701, CC BY 4.0·공공누리 1유형) 시군구 합산"
 
 d = pd.read_csv(ROOT / "recipe" / "aidc_siting_dataset.csv", encoding="utf-8-sig", dtype={"sigungu_code": str})
+# 제출용 데이터셋에는 순위 열이 없으므로 상세 순위 파일에서 가져온다(그림 4·5에서 사용)
+_rank = pd.read_csv(ROOT / "data" / "processed" / "최종_순위.csv", encoding="utf-8-sig", dtype={"시군구코드": str})
+_rank = _rank[["시군구코드", "전체순위"]].rename(columns={"시군구코드": "sigungu_code", "전체순위": "national_rank"})
+d = d.merge(_rank, on="sigungu_code", validate="1:1")
 gj = gpd.read_file(ROOT / "data" / "processed" / "boundary_sigungu_2026_simplified.geojson")
 gdf = gj.merge(d, on="sigungu_code", validate="1:1")
-assert len(gdf) == 256 and gdf.suitability_score.notna().sum() == 245 + 0 or True
+assert len(gdf) == 256
 
 
 def style_map(ax, xlim=None, ylim=None):
